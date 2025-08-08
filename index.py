@@ -50,8 +50,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--csv",
-        required=True,
-        help="Path to SILKYSKY_DATA_CW2.csv",
+        default=None,
+        help="Path to SILKYSKY_DATA_CW2.csv (optional in Colab; will open upload dialog if omitted)",
     )
     parser.add_argument(
         "--output-dir",
@@ -123,10 +123,16 @@ def build_preprocessor(numeric_cols: List[str], categorical_cols: List[str]) -> 
         ]
     )
 
+    # Create OHE with cross-version compatibility for sparse_output vs sparse
+    try:
+        ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    except TypeError:  # older sklearn
+        ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)
+
     categorical_pipeline = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=False)),
+            ("onehot", ohe),
         ]
     )
 
@@ -477,7 +483,24 @@ def run(csv: str, output_dir: str = "outputs", test_size: float = 0.2, cv_folds:
 
 def main() -> None:
     args = parse_args()
-    execute(args.csv, args.output_dir, args.test_size, args.cv_folds)
+
+    csv_path = args.csv
+    if csv_path is None:
+        # Attempt Colab upload flow if available
+        try:
+            from google.colab import files  # type: ignore
+            print("Please upload SILKYSKY_DATA_CW2.csv...")
+            uploaded = files.upload()
+            if not uploaded:
+                raise RuntimeError("No file uploaded")
+            csv_path = next(iter(uploaded.keys()))
+            print(f"Using uploaded file: {csv_path}")
+        except Exception as e:
+            raise SystemExit(
+                "--csv was not provided and Colab upload is unavailable. Provide --csv or run index.run(csv=...) in a notebook."
+            )
+
+    execute(csv_path, args.output_dir, args.test_size, args.cv_folds)
 
 
 if __name__ == "__main__":
