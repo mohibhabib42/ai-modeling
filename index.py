@@ -305,12 +305,11 @@ def extract_feature_names_from_preprocessor(preprocessor: ColumnTransformer) -> 
 # Main
 # -----------------------------
 
-def main() -> None:
-    args = parse_args()
-    output_dir = ensure_dir(args.output_dir)
+def execute(csv: str, output_dir: str = "outputs", test_size: float = 0.2, cv_folds: int = 5):
+    output_dir = ensure_dir(output_dir)
 
     # Load data
-    df = load_dataframe(args.csv)
+    df = load_dataframe(csv)
 
     # Basic info outputs
     info_text = []
@@ -334,7 +333,6 @@ def main() -> None:
     save_text("\n".join([str(x) for x in info_text]), output_dir / "dataset_info.txt")
 
     # EDA plots (saved only)
-    # Ensure target exists; map to 0/1 if Y/N
     if "Satisfied" in df.columns and df["Satisfied"].dtype == object:
         df["Satisfied"] = df["Satisfied"].map({"Y": 1, "N": 0})
 
@@ -356,7 +354,7 @@ def main() -> None:
 
     # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=args.test_size, random_state=42, stratify=y if y.nunique() == 2 else None
+        X, y, test_size=test_size, random_state=42, stratify=y if y.nunique() == 2 else None
     )
 
     # Preprocessor & Pipelines
@@ -398,7 +396,7 @@ def main() -> None:
     plot_and_save_roc_curves(fpr_lr, tpr_lr, auc_lr, fpr_rf, tpr_rf, auc_rf, output_dir)
 
     # Cross-validation on full data for both models
-    skf = StratifiedKFold(n_splits=args.cv_folds, shuffle=True, random_state=42)
+    skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
     cv_scores_lr = cross_val_score(lr_pipe, X, y, cv=skf, scoring="accuracy")
     cv_scores_rf = cross_val_score(rf_pipe, X, y, cv=skf, scoring="accuracy")
 
@@ -414,10 +412,10 @@ def main() -> None:
     metrics_text.append("Classification Report - Random Forest:\n" + report_rf)
     metrics_text.append("")
     metrics_text.append(
-        f"Logistic Regression {args.cv_folds}-fold CV Accuracy: {cv_scores_lr} (mean={cv_scores_lr.mean():.4f})"
+        f"Logistic Regression {cv_folds}-fold CV Accuracy: {cv_scores_lr} (mean={cv_scores_lr.mean():.4f})"
     )
     metrics_text.append(
-        f"Random Forest {args.cv_folds}-fold CV Accuracy: {cv_scores_rf} (mean={cv_scores_rf.mean():.4f})"
+        f"Random Forest {cv_folds}-fold CV Accuracy: {cv_scores_rf} (mean={cv_scores_rf.mean():.4f})"
     )
 
     save_text("\n".join(metrics_text), output_dir / "metrics.txt")
@@ -434,10 +432,8 @@ def main() -> None:
     comparison_df.to_csv(output_dir / "model_performance_comparison.csv", index=False)
 
     # Coefficients (LogReg) and Feature Importances (RF)
-    # Extract transformed feature names
     feature_names = extract_feature_names_from_preprocessor(lr_pipe.named_steps["preprocess"])  # same preprocessor
 
-    # Logistic Regression coefficients
     try:
         lr_coef = lr_pipe.named_steps["clf"].coef_[0]
         coef_df = pd.DataFrame({"Feature": feature_names[: len(lr_coef)], "Coefficient": lr_coef})
@@ -446,7 +442,6 @@ def main() -> None:
     except Exception:
         pass
 
-    # Random Forest importances
     try:
         rf_importances = rf_pipe.named_steps["clf"].feature_importances_
         imp_df = pd.DataFrame({"Feature": feature_names[: len(rf_importances)], "Importance": rf_importances})
@@ -471,6 +466,18 @@ def main() -> None:
         "- rf_feature_importances.csv: Feature importances from Random Forest (if available)\n"
     )
     save_text(readme, output_dir / "README.txt")
+
+    return output_dir
+
+
+def run(csv: str, output_dir: str = "outputs", test_size: float = 0.2, cv_folds: int = 5):
+    """Convenience entrypoint for notebooks (e.g., Google Colab)."""
+    return execute(csv, output_dir, test_size, cv_folds)
+
+
+def main() -> None:
+    args = parse_args()
+    execute(args.csv, args.output_dir, args.test_size, args.cv_folds)
 
 
 if __name__ == "__main__":
